@@ -57,7 +57,6 @@ CREATE TABLE journaling_students (
     student_group_id NUMBER
 );
 
-
 CREATE OR REPLACE TRIGGER journal_students
 AFTER UPDATE OR INSERT OR DELETE
 ON students FOR EACH ROW
@@ -88,6 +87,37 @@ UPDATE students SET students.group_id=2 WHERE students.id=7;
 DELETE FROM students WHERE students.id=7;
 
 select * from journaling_students;
+   
+--TASK 5
+CREATE OR REPLACE PROCEDURE roll_back(time_back TIMESTAMP) 
+IS
+CURSOR c_journal IS SELECT * FROM journaling_students;
+wrong_operation EXCEPTION;
+BEGIN
+    FOR r_journal IN c_journal LOOP
+        IF r_journal.date_of_writting > time_back THEN 
+            IF r_journal.operation = 'I' THEN
+                        dbms_output.put_line(r_journal.operation);
+                DELETE FROM students WHERE id=r_journal.student_id;
+            ELSIF r_journal.operation = 'D' THEN
+                        dbms_output.put_line(r_journal.operation);
+                INSERT INTO students VALUES(r_journal.student_id, r_journal.student_name, r_journal.student_group_id);
+            ELSIF r_journal.operation = 'BU' THEN
+                        dbms_output.put_line(r_journal.operation);
+                UPDATE students SET 
+                students.name=r_journal.student_name,
+                students.group_id=r_journal.student_group_id 
+                WHERE students.id=r_journal.student_id;
+            ELSIF r_journal.operation = 'AU' THEN
+                null;
+            ELSE 
+                RAISE wrong_operation;
+            END IF;
+        END IF;
+    END LOOP;
+END;
+
+EXEC roll_back(TO_TIMESTAMP('05.02.23 22:11:17'));
 
 --TASK 6
 CREATE OR REPLACE TRIGGER update_group
@@ -120,4 +150,4 @@ select * from groups;
 
 INSERT INTO students(id, name, group_id) VALUES(1, 'Natali', 1);
 UPDATE students SET students.group_id=2 WHERE students.id=7;
-DELETE FROM students WHERE id=1;
+DELETE FROM students WHERE id=1;    
