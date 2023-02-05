@@ -45,7 +45,49 @@ BEGIN
     dbms_output.put_line( utl_lms.format_message('INSERT INTO students VALUES(%d, %s, %d)', TO_CHAR(students_amount+1), :NEW.name, TO_CHAR(:NEW.group_id)));
 END;
     
+--TASK 4
+DROP TABLE journaling_students;
 
+CREATE TABLE journaling_students (
+    id NUMBER PRIMARY KEY,
+    operation VARCHAR2(2) NOT NULL,
+    date_of_writting TIMESTAMP NOT NULL,
+    student_id NUMBER,
+    student_name VARCHAR2(100) NOT NULL,
+    student_group_id NUMBER
+);
+
+
+CREATE OR REPLACE TRIGGER journal_students
+AFTER UPDATE OR INSERT OR DELETE
+ON students FOR EACH ROW
+DECLARE 
+    amount_of_records NUMBER;
+BEGIN
+    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM journaling_students' INTO amount_of_records;
+    CASE
+        WHEN inserting THEN
+            INSERT INTO journaling_students VALUES (amount_of_records+1,
+            'I', CURRENT_TIMESTAMP, :NEW.id, :NEW.name, :NEW.group_id);
+        
+        WHEN updating THEN
+             INSERT INTO journaling_students VALUES (amount_of_records+1,
+            'BU', CURRENT_TIMESTAMP, :OLD.id, :OLD.name, :OLD.group_id);
+             INSERT INTO journaling_students VALUES (amount_of_records+2,
+            'AU', CURRENT_TIMESTAMP, :NEW.id, :NEW.name, :NEW.group_id);           
+        WHEN deleting THEN
+           INSERT INTO journaling_students VALUES (amount_of_records+1,
+            'D', CURRENT_TIMESTAMP, :OLD.id, :OLD.name, :OLD.group_id);
+    END CASE;
+   
+END;
+
+INSERT INTO students(id, name, group_id) VALUES(6, 'Dima', 1);
+INSERT INTO students(id, name, group_id) VALUES(7, 'Roman', 1);
+UPDATE students SET students.group_id=2 WHERE students.id=7;
+DELETE FROM students WHERE students.id=7;
+
+select * from journaling_students;
 
 --TASK 6
 CREATE OR REPLACE TRIGGER update_group
@@ -77,5 +119,5 @@ select * from students;
 select * from groups;
 
 INSERT INTO students(id, name, group_id) VALUES(1, 'Natali', 1);
-UPDATE students SET students.group_id=5 WHERE students.id=1;
+UPDATE students SET students.group_id=2 WHERE students.id=7;
 DELETE FROM students WHERE id=1;
