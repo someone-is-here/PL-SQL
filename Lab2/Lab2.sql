@@ -14,7 +14,7 @@ CREATE TABLE groups(
      name VARCHAR2(100) NOT NULL,
      students_amount NUMBER NOT NULL);    
      
-INSERT INTO groups(id, name, students_amount) VALUES(1, '053501', 1);
+INSERT INTO groups(id, name, students_amount) VALUES(1, '053501', 0);
 INSERT INTO groups(id, name, students_amount) VALUES(2, '053502', 0);
 INSERT INTO groups(id, name, students_amount) VALUES(3, '053503', 0);
 INSERT INTO groups(id, name, students_amount) VALUES(4, '053504', 0);
@@ -44,6 +44,26 @@ BEGIN
 --    EXECUTE IMMEDIATE utl_lms.format_message('INSERT INTO students VALUES(%d, %d, %d)', students_amount+1,NEW.name, NEW.group);
     dbms_output.put_line( utl_lms.format_message('INSERT INTO students VALUES(%d, %s, %d)', TO_CHAR(students_amount+1), :NEW.name, TO_CHAR(:NEW.group_id)));
 END;
+
+--TASK 3
+CREATE OR REPLACE TRIGGER fk_student_group
+AFTER DELETE ON students FOR EACH ROW
+DECLARE
+   students_amount_in_group NUMBER;
+BEGIN
+    EXECUTE IMMEDIATE 'SELECT groups.students_amount FROM groups WHERE id='||:OLD.group_id INTO students_amount_in_group;
+        dbms_output.put_line(students_amount_in_group);
+    IF students_amount_in_group=1 THEN
+        DELETE FROM groups WHERE id=:OLD.group_id;
+    END IF;
+END;
+
+--TESTING
+SELECT * FROM students;
+SELECT * from groups;
+
+INSERT INTO students VALUES(4, 'Roman', 2);
+DELETE FROM students WHERE id=3;
     
 --TASK 4
 DROP TABLE journaling_students;
@@ -141,6 +161,9 @@ BEGIN
             EXECUTE IMMEDIATE 'SELECT groups.students_amount FROM groups WHERE groups.id='||:OLD.group_id INTO students_in_group;
             EXECUTE IMMEDIATE 'UPDATE groups SET groups.students_amount=:students WHERE groups.id='||:OLD.group_id USING (students_in_group-1);
     END CASE;
+EXCEPTION 
+    WHEN NO_DATA_FOUND THEN
+        dbms_output.put_line('the group has been deleted');
    
 END;
 
