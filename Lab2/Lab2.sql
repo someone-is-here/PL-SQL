@@ -1,13 +1,20 @@
 DROP TABLE students;
 DROP TABLE groups;
 
+SET SERVEROUTPUT ON;
+
 --TASK 1
 CREATE TABLE students(
      id NUMBER PRIMARY KEY,
      name VARCHAR2(100) NOT NULL,
      group_id NUMBER);
      
-INSERT INTO students(id, name, group_id) VALUES(2, 'Alina', 1);
+INSERT INTO students(id, name, group_id) VALUES(1, 'Alina', 1);
+INSERT INTO students(id, name, group_id) VALUES(1, 'Alex', 1);
+INSERT INTO students(id, name, group_id) VALUES(1, 'Natalia', 2);
+INSERT INTO students(id, name, group_id) VALUES(1, 'Ash', 3);
+INSERT INTO students(id, name, group_id) VALUES(1, 'Nile', 4);
+INSERT INTO students(id, name, group_id) VALUES(1, 'Niall', 5);
 
 CREATE TABLE groups(
      id NUMBER PRIMARY KEY,
@@ -20,29 +27,81 @@ INSERT INTO groups(id, name, students_amount) VALUES(3, '053503', 0);
 INSERT INTO groups(id, name, students_amount) VALUES(4, '053504', 0);
 INSERT INTO groups(id, name, students_amount) VALUES(5, '053505', 0);
 
-CREATE TABLE students_journaling
-SET SERVEROUTPUT ON;
 
---CURSOR c_groups IS SELECT * FROM groups;
---FOR r_group IN c_groups LOOP
---        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM students WHERE group_id='||r_group.id INTO students_in_group;
---        IF students_in_group != r_group.students_amount
---        dbms_output.put_line( r_group.id || ': ' ||  r_group.name || ' students: ' || r_group.students_amount);
---    END LOOP;   
+--TASK 2
 
-CREATE OR REPLACE TRIGGER insert_or_update_student
+CREATE SEQUENCE student_id_generator
+  START WITH 7
+  INCREMENT BY 1
+  CACHE 100;
+
+CREATE SEQUENCE group_id_generator
+  START WITH 6
+  INCREMENT BY 1
+  CACHE 100;
+
+CREATE OR REPLACE TRIGGER generate_student_id
+  BEFORE INSERT ON students
+  FOR EACH ROW
+BEGIN
+  :new.id := student_id_generator.nextval;
+END;
+
+CREATE OR REPLACE TRIGGER generate_group_id
+  BEFORE INSERT ON groups
+  FOR EACH ROW
+BEGIN
+  :new.id := group_id_generator.nextval;
+END;
+
+select * from groups;
+INSERT INTO groups(name, students_amount) VALUES ('053506', 0);
+delete from groups where groups.name='053501';
+INSERT INTO groups VALUES (11, '053501', 0);
+
+CREATE OR REPLACE TRIGGER check_group_name
+BEFORE UPDATE OR INSERT
+ON groups FOR EACH ROW
+DECLARE
+id_ NUMBER;
+existing_name EXCEPTION;
+BEGIN
+        SELECT groups.id INTO id_ FROM groups WHERE groups.name=:NEW.name;
+        dbms_output.put_line('This name already exists'||:NEW.name);
+        raise existing_name;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        dbms_output.put_line('successfully inserted!');
+END;
+
+CREATE OR REPLACE TRIGGER check_group_id
+BEFORE UPDATE OR INSERT
+ON groups FOR EACH ROW
+DECLARE
+id_ NUMBER;
+existing_id EXCEPTION;
+BEGIN
+        SELECT groups.id INTO id_ FROM groups WHERE groups.id=:NEW.id;
+               dbms_output.put_line('An id already exists'||:NEW.id);
+        raise existing_id;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        dbms_output.put_line('successfully inserted!');
+END;
+
+CREATE OR REPLACE TRIGGER check_student_id
 BEFORE UPDATE OR INSERT
 ON students FOR EACH ROW
 DECLARE
-students_amount NUMBER;
+id_ NUMBER;
+existing_id EXCEPTION;
 BEGIN
-    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM students' INTO students_amount;
-    FOR i IN 1 .. students_amount LOOP
-        i
-    END LOOP;
-    dbms_output.put_line(students_amount);
---    EXECUTE IMMEDIATE utl_lms.format_message('INSERT INTO students VALUES(%d, %d, %d)', students_amount+1,NEW.name, NEW.group);
-    dbms_output.put_line( utl_lms.format_message('INSERT INTO students VALUES(%d, %s, %d)', TO_CHAR(students_amount+1), :NEW.name, TO_CHAR(:NEW.group_id)));
+        SELECT students.id INTO id_ FROM students WHERE students.id=:NEW.id;
+        dbms_output.put_line('An id already exists'||:NEW.id);
+        raise existing_id;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        dbms_output.put_line('successfully inserted!');
 END;
 
 --TASK 3
@@ -173,4 +232,4 @@ select * from groups;
 
 INSERT INTO students(id, name, group_id) VALUES(1, 'Natali', 1);
 UPDATE students SET students.group_id=2 WHERE students.id=7;
-DELETE FROM students WHERE id=1;    
+DELETE FROM groups WHERE id>8;    
