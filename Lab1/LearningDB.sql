@@ -114,7 +114,7 @@ BEGIN
     IF adding_percent < 0 THEN
         RAISE wrong_percent;        
     END IF;        
-    result_value := (1 + 1/adding_percent)*12*monthly_income;
+    result_value := (1 + (1/100)*adding_percent)*12*monthly_income;
     RETURN  utl_lms.format_message('%d', TO_CHAR(result_value));
 
     EXCEPTION
@@ -131,7 +131,7 @@ SET SERVEROUTPUT ON;
 DECLARE
     res VARCHAR2(100);
 BEGIN
-    SELECT get_year_income(12, -13) INTO res from DUAL;
+    SELECT get_year_income(12, 13) INTO res from DUAL;
     dbms_output.put_line(res);
     
     EXCEPTION
