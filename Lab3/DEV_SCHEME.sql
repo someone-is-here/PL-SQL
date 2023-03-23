@@ -22,3 +22,43 @@ CREATE TABLE employees(
 ALTER TABLE departments
   ADD (departemnt_mystery varchar2(45),
        counter NUMBER);
+       
+CREATE TABLE test_constr(
+    id number NOT NULL PRIMARY KEY,
+     department_id number,
+     CONSTRAINT fk_departments_tesest
+    FOREIGN KEY (department_id)
+    REFERENCES departments(department_id)
+);
+
+CREATE OR REPLACE PROCEDURE greetings 
+AS 
+BEGIN 
+   dbms_output.put_line('Hello World!'); 
+END; 
+
+CREATE OR REPLACE PACKAGE emp_mgmt AS
+    FUNCTION hire(last_name VARCHAR2, job_id VARCHAR2, manager_id NUMBER, 
+    salary NUMBER, commission_pct NUMBER, department_id NUMBER) RETURN NUMBER;
+    END emp_mgmt;
+
+CREATE OR REPLACE PACKAGE BODY emp_mgmt AS empl_num NUMBER;
+    FUNCTION hire(last_name VARCHAR2, job_id VARCHAR2, manager_id NUMBER, 
+    salary NUMBER, commission_pct NUMBER, department_id NUMBER) RETURN NUMBER IS new_empl NUMBER;
+    BEGIN
+        return 13;
+    END;
+END emp_mgmt;
+
+CREATE OR REPLACE FUNCTION find_sum(number_1 NUMBER, number_2 NUMBER) 
+    RETURN NUMBER 
+    IS
+    sum_ NUMBER;
+    BEGIN
+        sum_ := number_1 + number_2;
+        return sum_;
+    END;
+
+CREATE TABLE my_tab(
+name VARCHAR2(10)
+);

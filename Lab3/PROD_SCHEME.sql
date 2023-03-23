@@ -15,3 +15,16 @@ CREATE TABLE employees(
 
 ALTER TABLE departments
   ADD departemnt_mystery varchar2(45);
+  
+  
+CREATE TABLE test_constr(
+    id number NOT NULL PRIMARY KEY
+);
+
+CREATE OR REPLACE PROCEDURE greetings 
+AS 
+BEGIN 
+
+   dbms_output.put_line('Hello World!'); 
+   
+END; 
