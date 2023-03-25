@@ -45,17 +45,18 @@ WHERE owner='DEV_SCHEME' AND table_name='DEPARTMENTS';
 
 SET SERVEROUTPUT ON;
 
-CREATE OR REPLACE FUNCTION generate_code(scheme VARCHAR2, type VARCHAR2, name VARCHAR2)
-RETURN VARCHAR2
+CREATE OR REPLACE FUNCTION generate_code(scheme VARCHAR2, obj_type VARCHAR2, obj_name VARCHAR2)
+RETURN NCLOB
 IS
-proc_code CLOB;
+proc_code NCLOB;
 BEGIN
  select listagg(text, '') within group (order by line) into proc_code
     from all_source
     where owner = scheme
-        and type = type
-        and name = name
-    group by name;
+        and type = obj_type
+        and name = obj_name
+    group by obj_name;
+    
     proc_code := CONCAT('CREATE OR REPLACE ', proc_code);
     
     return proc_code;
@@ -113,6 +114,7 @@ BEGIN
       
       return is_different_structure;
 END;
+
 -- all functions return wrong info
 CREATE OR REPLACE FUNCTION is_diff_constraints(dev_scheme VARCHAR2, dev_table VARCHAR2,                            
                                           prod_scheme VARCHAR2, prod_table VARCHAR2)
@@ -159,9 +161,26 @@ BEGIN
       return is_different_constraint;
 END;
 
-CREATE OR REPLACE FUNCTION get_diff_between_objects(dev_scheme VARCHAR2,                            
+CREATE OR REPLACE FUNCTION check_is_different_objects(dev_scheme VARCHAR2,                            
+                                          prod_scheme VARCHAR2, type VARCHAR2, object_name VARCHAR2)
+RETURN BOOLEAN    
+IS
+    obj_code_1 NCLOB;
+    obj_code_2 NCLOB;
+BEGIN
+    obj_code_1 := generate_code(dev_scheme, type, object_name);
+    obj_code_2 := generate_code(prod_scheme, type, object_name);
+    
+    IF obj_code_1 = obj_code_2 THEN
+        RETURN FALSE;
+    END IF;
+    
+    RETURN TRUE;
+END;
+
+CREATE OR REPLACE FUNCTION create_objects_in_prod(dev_scheme VARCHAR2,                            
                                           prod_scheme VARCHAR2, type VARCHAR2)
-RETURN VARCHAR2
+RETURN NCLOB
 IS
 
 CURSOR curr_dev IS
@@ -179,25 +198,66 @@ CURSOR curr_prod IS
 dev_scheme_col curr_dev%ROWTYPE;
 prod_scheme_col curr_prod%ROWTYPE;
 
-result VARCHAR2(30000);
+result NCLOB;
 is_found BOOLEAN;
 
 BEGIN
-    result := '';
     FOR  dev_scheme_col IN curr_dev
         LOOP        
          is_found := FALSE;
          FOR prod_scheme_col IN curr_prod
             LOOP
+            IF prod_scheme_col.OBJECT_NAME=dev_scheme_col.OBJECT_NAME  
+                AND not check_is_different_objects(dev_scheme, prod_scheme, type, dev_scheme_col.OBJECT_NAME) THEN
+                is_found :=  TRUE;
+            END IF;
             
+            END LOOP;
+            
+            IF is_found=FALSE THEN   
+                result := CONCAT(result, chr(10) || generate_code(dev_scheme, type, dev_scheme_col.OBJECT_NAME));
+            END IF;
+    END LOOP;    
+      return result;
+END;
+
+CREATE OR REPLACE FUNCTION remove_objects_in_prod(dev_scheme VARCHAR2,                            
+                                          prod_scheme VARCHAR2, type VARCHAR2)
+RETURN NCLOB
+IS
+
+CURSOR curr_dev IS
+    SELECT owner, object_name, object_type
+    From all_procedures 
+    WHERE owner=dev_scheme AND object_type=type
+    ORDER BY object_name;
+    
+CURSOR curr_prod IS
+    SELECT owner, object_name, object_type
+    From all_procedures 
+    WHERE owner=prod_scheme AND object_type=type
+    ORDER BY object_name;
+
+dev_scheme_col curr_dev%ROWTYPE;
+prod_scheme_col curr_prod%ROWTYPE;
+
+result NCLOB;
+is_found BOOLEAN;
+
+BEGIN
+    FOR  prod_scheme_col IN curr_prod
+        LOOP        
+         is_found := FALSE;
+         FOR dev_scheme_col IN curr_dev
+            LOOP
             IF prod_scheme_col.OBJECT_NAME=dev_scheme_col.OBJECT_NAME THEN
                 is_found :=  TRUE;
             END IF;
             
             END LOOP;
             
-            IF is_found=FALSE THEN            
-                result := CONCAT(result, chr(10) || generate_code(dev_scheme, type, dev_scheme_col.OBJECT_NAME));
+            IF is_found=FALSE THEN   
+                result := CONCAT(result, chr(10) || 'DROP ' || type || ' ' || prod_scheme_col.OBJECT_NAME || ';');
             END IF;
     END LOOP;    
       return result;
@@ -205,7 +265,7 @@ END;
 
 CREATE OR REPLACE FUNCTION get_diff_between_tables(dev_scheme VARCHAR2,
                                                     prod_scheme VARCHAR2)
-RETURN VARCHAR2
+RETURN NCLOB
 IS
 CURSOR curr_dev_scheme 
 IS SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = dev_scheme;
@@ -215,8 +275,8 @@ IS SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = prod_scheme;
 
 is_found BOOLEAN;
 
-result VARCHAR2(2000);
-ddl_script VARCHAR2(2000);
+result NCLOB;
+ddl_script NCLOB;
 
 BEGIN
 
@@ -230,23 +290,22 @@ BEGIN
                     is_found := TRUE;
                     IF is_diff_tables(dev_scheme, dev_scheme_row.TABLE_NAME,
                                     prod_scheme, prod_scheme_row.TABLE_NAME) THEN
-                                    
-                    result := CONCAT(result, CONCAT(chr(10) || 'Different table structures of table: ', dev_scheme_row.TABLE_NAME));  
+                     dbms_lob.append(result, CONCAT(result, CONCAT(chr(10) || 'Different table structures of table: ', dev_scheme_row.TABLE_NAME)));                
                     END IF;   
                     
                     IF is_diff_constraints(dev_scheme, dev_scheme_row.TABLE_NAME,
                                     prod_scheme, prod_scheme_row.TABLE_NAME) THEN
                                     
-                    result := CONCAT(result, CONCAT(chr(10) || 'Different table constraints of table: ', dev_scheme_row.TABLE_NAME));  
+                    dbms_lob.append(result, CONCAT(result, CONCAT(result, CONCAT(chr(10) || 'Different table constraints of table: ', dev_scheme_row.TABLE_NAME))));           
                     END IF;  
                 END IF;
             END LOOP;    
             
             IF is_found = FALSE THEN
-               result := CONCAT(result, CONCAT(chr(10) || 'No table: ', dev_scheme_row.TABLE_NAME));
-               ddl_script := CONCAT(ddl_script, chr(10) || 
+                dbms_lob.append(result, CONCAT(chr(10) || 'No table: ', dev_scheme_row.TABLE_NAME));           
+                dbms_lob.append(result, CONCAT(ddl_script, chr(10) || 
                utl_lms.format_message('CREATE TABLE %s.%s AS SELECT * FROM %s.%s;',
-               prod_scheme, dev_scheme_row.TABLE_NAME, dev_scheme, dev_scheme_row.TABLE_NAME));
+               prod_scheme, dev_scheme_row.TABLE_NAME, dev_scheme, dev_scheme_row.TABLE_NAME)));   
             END IF;
    END LOOP;
    
@@ -255,28 +314,50 @@ END;
 
 CREATE OR REPLACE FUNCTION get_diff_between_schemes(dev_scheme VARCHAR2,
                                                     prod_scheme VARCHAR2)
-RETURN CLOB
+RETURN NCLOB
 IS
-
-result CLOB;
+lc_function CONSTANT VARCHAR2(9) := 'FUNCTION';  
+lc_procedure CONSTANT VARCHAR2(10) := 'PROCEDURE';  
+lv_result NCLOB;
 
 BEGIN
-    result := get_diff_between_tables(dev_scheme, prod_scheme); 
-    result := CONCAT(result, CONCAT(chr(10), get_diff_between_objects(dev_scheme, prod_scheme, 'FUNCTION')));
-    result := CONCAT(result, CONCAT(chr(10), get_diff_between_objects(dev_scheme, prod_scheme, 'PROCEDURE')));
-    result := CONCAT(result, CONCAT(chr(10), get_diff_between_objects(dev_scheme, prod_scheme, 'PACKAGE')));
-
-    return result;
+    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_function));
+    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_function));
+    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
+    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
+    
+    return lv_result;
 END;
+
 
 DECLARE
-    result CLOB;
+ -- l_file    UTL_FILE.FILE_TYPE;
+  result    CLOB;
+  lv_buffer  VARCHAR2(32766);
+  lv_amount  BINARY_INTEGER := 32766;
+  lv_offset     INTEGER := 1;
 BEGIN
-    result := get_diff_between_schemes('DEV_SCHEME', 'PROD_SCHEME');
-    DBMS_OUTPUT.PUT_LINE(result);
+    
+--  l_file := UTL_FILE.fopen('DOCUMENTS', 'prod.txt', 'w', 32766);
+--    
+  result := get_diff_between_schemes('DEV_SCHEME', 'PROD_SCHEME');
+  LOOP
+    DBMS_LOB.READ(result, lv_amount, lv_offset, lv_buffer);
+    DBMS_OUTPUT.PUT_LINE(lv_buffer);
+    --UTL_FILE.put(l_file, lv_buffer);
+    lv_offset := lv_offset + lv_amount;
+    EXIT WHEN lv_amount > DBMS_LOB.GETLENGTH(result) - lv_offset + 1;
+  END LOOP;
+
+--  EXCEPTION
+--  WHEN OTHERS THEN
+--    DBMS_OUTPUT.put_line(SQLERRM);
+--    UTL_FILE.fclose(l_file);
+--    
+--UTL_FILE.fclose(l_file);
 END;
 
-
+    
 select * from dba_objects 
    where owner='DEV_SCHEME' AND object_type in ( 'PROCEDURE', 'PACKAGE', 'FUNCTION', 'PACKAGE BODY' );
    

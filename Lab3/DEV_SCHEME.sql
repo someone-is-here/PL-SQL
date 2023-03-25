@@ -58,7 +58,14 @@ CREATE OR REPLACE FUNCTION find_sum(number_1 NUMBER, number_2 NUMBER)
         sum_ := number_1 + number_2;
         return sum_;
     END;
-
+CREATE OR REPLACE FUNCTION find_sum_3(number_1 NUMBER, number_2 NUMBER, number_3 NUMBER) 
+    RETURN NUMBER 
+    IS
+    sum_ NUMBER;
+    BEGIN
+        sum_ := number_1 + number_2 + number_3;
+        return sum_;
+    END;
 CREATE TABLE my_tab(
 name VARCHAR2(10)
 );

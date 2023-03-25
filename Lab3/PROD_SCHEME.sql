@@ -28,3 +28,22 @@ BEGIN
    dbms_output.put_line('Hello World!'); 
    
 END; 
+
+CREATE OR REPLACE FUNCTION find_sum_1(number_1 NUMBER) 
+    RETURN NUMBER 
+    IS
+    sum_ NUMBER;
+    BEGIN
+        sum_ := number_1;
+        return sum_;
+    END;
+
+CREATE OR REPLACE FUNCTION find_sum(number_1 NUMBER, number_2 NUMBER) 
+    RETURN NUMBER 
+    IS
+    sum_ NUMBER;
+    BEGIN
+        DBMS_OUTPUT.PUT_LINE('result');
+        sum_ := number_1 + number_2;
+        return sum_;
+    END;
