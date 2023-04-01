@@ -25,13 +25,13 @@ WHERE owner='DEV_SCHEME' AND table_name='EMPLOYEES';
 
 select owner, constraint_name, constraint_type, table_name, r_owner,r_constraint_name, search_condition, status, index_name, index_owner 
 From all_constraints 
-WHERE owner='PROD_SCHEME' AND table_name='EMPLOYEES'; 
+WHERE owner='PROD_SCHEME' AND table_name='TEST_CONSTR'; 
 
 describe USER_CONSTRAINTS ;
 -- checks is constrains are similar
 select owner, constraint_name, constraint_type, table_name, search_condition_vc, status 
 From all_constraints 
-WHERE owner='DEV_SCHEME' AND table_name='USERS'; 
+WHERE owner='DEV_SCHEME' AND table_name='TEST_CONSTR'; 
 
 
 select *
@@ -343,7 +343,6 @@ BEGIN
       return is_different_structure;
 END;
 
--- all functions return wrong info
 CREATE OR REPLACE FUNCTION is_diff_constraints(dev_scheme VARCHAR2, dev_table VARCHAR2,                            
                                           prod_scheme VARCHAR2, prod_table VARCHAR2)
 RETURN BOOLEAN
@@ -402,7 +401,7 @@ IS SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = prod_scheme;
 
 is_found BOOLEAN;
 
-result NCLOB;
+lv_result NCLOB;
 
 BEGIN
 
@@ -416,25 +415,30 @@ BEGIN
                     is_found := TRUE;
                     IF is_diff_tables(dev_scheme, dev_scheme_row.TABLE_NAME,
                                     prod_scheme, prod_scheme_row.TABLE_NAME) THEN
-                     result := CONCAT(result, chr(10) || 'Different table structures of table: ' || dev_scheme_row.TABLE_NAME);                
+                                    
+                        lv_result := CONCAT(lv_result, chr(10) || 'DROP AND RECREATE BECAUSE OF DIFFERENT TABLES STRUCTURE');    
+                        lv_result := CONCAT(lv_result, chr(10) || 
+                                   utl_lms.format_message('DROP TABLE %s.%s;',
+                                    prod_scheme, prod_scheme_row.TABLE_NAME)); 
+                        lv_result := CONCAT(lv_result, chr(10) || 
+                                   create_table(dev_scheme, prod_scheme, dev_scheme_row.TABLE_NAME));              
                     END IF;   
                     
-                    IF is_diff_constraints(dev_scheme, dev_scheme_row.TABLE_NAME,
-                                    prod_scheme, prod_scheme_row.TABLE_NAME) THEN
-                                    
-                    result := CONCAT(result, chr(10) || 'Different table constraints of table: ' || dev_scheme_row.TABLE_NAME);           
-                    END IF;  
+--                    IF is_diff_constraints(dev_scheme, dev_scheme_row.TABLE_NAME,
+--                                    prod_scheme, prod_scheme_row.TABLE_NAME) THEN
+--                                    
+--                    result := CONCAT(result, chr(10) || 'Different table constraints of table: ' || dev_scheme_row.TABLE_NAME);           
+--                    END IF;  
                 END IF;
             END LOOP;    
             
             IF is_found = FALSE THEN          
-                result := CONCAT(result, chr(10) || 
-               utl_lms.format_message('CREATE TABLE %s.%s AS SELECT * FROM %s.%s;',
-               prod_scheme, dev_scheme_row.TABLE_NAME, dev_scheme, dev_scheme_row.TABLE_NAME));   
+               lv_result := CONCAT(lv_result, chr(10) || 
+                                   create_table(dev_scheme, prod_scheme, dev_scheme_row.TABLE_NAME));   
             END IF;
    END LOOP;
    
-    return result;
+    return lv_result;
 END;
 
 CREATE OR REPLACE FUNCTION get_diff_between_schemes(dev_scheme VARCHAR2,
@@ -449,65 +453,53 @@ lv_result NCLOB;
 
 BEGIN
 --workable
-    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_function));
-    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_function));
-    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
-    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
-    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_package));
-    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_package));
-    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_package_body));
-    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_package_body));
-    lv_result := CONCAT(lv_result, create_or_update_indexes(dev_scheme, prod_scheme));
-    lv_result := CONCAT(lv_result, remove_prod_indexes(dev_scheme, prod_scheme));
---      lv_result := CONCAT(lv_result,  get_diff_between_tables(dev_scheme, prod_scheme)); 
+--    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_function));
+--    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_function));
+--    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
+--    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
+--    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_package));
+--    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_package));
+--    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_package_body));
+--    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_package_body));
+--    lv_result := CONCAT(lv_result, create_or_update_indexes(dev_scheme, prod_scheme));
+--    lv_result := CONCAT(lv_result, remove_prod_indexes(dev_scheme, prod_scheme));
+    
+    lv_result := CONCAT(lv_result,  get_diff_between_tables(dev_scheme, prod_scheme)); 
+    
     return lv_result;
 END;
 
 
 DECLARE
- -- l_file    UTL_FILE.FILE_TYPE;
-  result    CLOB;
+  lv_result    CLOB;
   lv_buffer  VARCHAR2(32766);
   lv_amount  BINARY_INTEGER := 32766;
   lv_offset     INTEGER := 1;
 BEGIN
-    
---  l_file := UTL_FILE.fopen('DOCUMENTS', 'prod.txt', 'w', 32766);
---    
-  result := get_diff_between_schemes('DEV_SCHEME', 'PROD_SCHEME');
+  lv_result := get_diff_between_schemes('DEV_SCHEME', 'PROD_SCHEME');
+  
   LOOP
-    DBMS_LOB.READ(result, lv_amount, lv_offset, lv_buffer);
+    DBMS_LOB.READ(lv_result, lv_amount, lv_offset, lv_buffer);
     DBMS_OUTPUT.PUT_LINE(lv_buffer);
-    --UTL_FILE.put(l_file, lv_buffer);
     lv_offset := lv_offset + lv_amount;
-    EXIT WHEN lv_amount > DBMS_LOB.GETLENGTH(result) - lv_offset + 1;
+    EXIT WHEN lv_amount > DBMS_LOB.GETLENGTH(lv_result) - lv_offset + 1;
   END LOOP;
-
---  EXCEPTION
---  WHEN OTHERS THEN
---    DBMS_OUTPUT.put_line(SQLERRM);
---    UTL_FILE.fclose(l_file);
---    
---UTL_FILE.fclose(l_file);
 END;
 
+grant SELECT_CATALOG_ROLE to function create_table;
 
+CREATE OR REPLACE FUNCTION create_table(dev_scheme VARCHAR2, prod_scheme VARCHAR2, table_name VARCHAR2)
+RETURN NCLOB
+AS 
+lv_result NCLOB;
+BEGIN
+    select dbms_metadata.get_ddl('TABLE', table_name, dev_scheme) INTO lv_result from dual;
+    lv_result := CONCAT(REGEXP_REPLACE(lv_result, upper(dev_scheme),upper(prod_scheme)), ';');
     
-select * from dba_objects 
-   where owner='DEV_SCHEME' AND object_type in ( 'PROCEDURE', 'PACKAGE', 'FUNCTION', 'PACKAGE BODY' );
-   
-SELECT authid from all_procedures WHERE owner='DEV_SCHEME';
+    return lv_result;
+END;
 
-SELECT owner, object_name, object_type
-    From all_objects 
-    WHERE owner='DEV_SCHEME'
-    ORDER BY object_name;
- 
-SELECT owner, object_name, object_type
-    From all_objects 
-    WHERE owner='PROD_SCHEME'
-    ORDER BY object_name;
-    
+select dbms_metadata.get_ddl('TABLE', '"MY_TAB"', '"DEV_SCHEME"') from dual;
 --WITH FindRoot AS (
 --    SELECT Id, ParentId, CAST(Id AS NCHAR(32767)), Path, 0 Distance
 --    FROM dbo.MyTable
@@ -520,25 +512,6 @@ SELECT owner, object_name, object_type
 --    ON C.ParentId = P.Id AND P.ParentId <> P.Id AND C.ParentId <> C.Id
 -- )
 
---  
---    SELECT LISTAGG(COLUMN_name, '; ') WITHIN GROUP (ORDER BY column_position) into lv_dev_index_list
---    FROM DBA_IND_COLUMNS
---    WHERE table_name=dev_scheme AND index_owner=dev_scheme
---    GROUP BY index_name;
---    
---    IF lv_prod_index_list=lv_dev_index_list THEN
---        is_equal := true;
---    END IF;
-
-SELECT owner, index_name, table_name, uniqueness from all_indexes
-    WHERE owner='DEV_SCHEME';
-
-    
-SELECT LISTAGG(COLUMN_name, '') WITHIN GROUP (ORDER BY column_position) list_index
-    FROM DBA_IND_COLUMNS
-    WHERE table_name='A1' AND index_owner='DEV_SCHEME' AND index_name='A3_INDEX'
-    GROUP BY index_name
-    ORDER BY list_index;
 --SELECT *
 --FROM FindRoot R
 --WHERE R.Id = R.ParentId 
