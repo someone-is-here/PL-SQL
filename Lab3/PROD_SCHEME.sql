@@ -1,7 +1,7 @@
 CREATE TABLE departments( 
   department_id number(10) NOT NULL PRIMARY KEY,
   department_name varchar2(50) NOT NULL
-);
+); 
 
 CREATE TABLE employees(
   employee_number number(10) NOT NULL PRIMARY KEY,
@@ -12,6 +12,14 @@ CREATE TABLE employees(
     FOREIGN KEY (department_id)
     REFERENCES departments(department_id)
 );
+CREATE TABLE a1(
+    x number,
+    y number
+);
+
+create index a1_index on a1(x, y);
+
+create index a1_x_index on a1(x);
 
 ALTER TABLE departments
   ADD departemnt_mystery varchar2(45);
@@ -20,6 +28,7 @@ ALTER TABLE departments
 CREATE TABLE test_constr(
     id number NOT NULL PRIMARY KEY
 );
+
 
 CREATE OR REPLACE PROCEDURE greetings 
 AS 

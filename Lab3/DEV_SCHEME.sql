@@ -69,3 +69,11 @@ CREATE OR REPLACE FUNCTION find_sum_3(number_1 NUMBER, number_2 NUMBER, number_3
 CREATE TABLE my_tab(
 name VARCHAR2(10)
 );
+
+CREATE TABLE a1(
+    x number,
+    y number
+);
+create index a3_index on a1(y);
+create index a2_index on a1(x,y);
+create index a1_index on a1(x);
