@@ -21,13 +21,23 @@ SELECT owner, table_name,
    
 select owner, constraint_name, constraint_type, table_name, r_owner,r_constraint_name, search_condition, status, index_name, index_owner 
 From all_constraints 
-WHERE owner='DEV_SCHEME' AND table_name='EMPLOYEES'; 
+WHERE owner='DEV_SCHEME' AND table_name='DEPARTMENTS'
+ORDER BY constraint_type; 
 
+select * 
+From all_constraints 
+WHERE owner='DEV_SCHEME' AND table_name='EMPLOYEES'
+ORDER BY constraint_type;
+
+
+SELECT owner, index_name, table_name, uniqueness from all_indexes
+    WHERE owner='DEV_SCHEME';
+    
 select owner, constraint_name, constraint_type, table_name, r_owner,r_constraint_name, search_condition, status, index_name, index_owner 
 From all_constraints 
 WHERE owner='PROD_SCHEME' AND table_name='TEST_CONSTR'; 
 
-describe USER_CONSTRAINTS ;
+
 -- checks is constrains are similar
 select owner, constraint_name, constraint_type, table_name, search_condition_vc, status 
 From all_constraints 
@@ -38,7 +48,21 @@ select *
 From all_constraints 
 WHERE owner='DEV_SCHEME' AND table_name='DEPARTMENTS'; 
 
-
+select *
+    from all_constraints
+    where r_owner = 'PROD_SCHEME'
+    and constraint_type = 'R'   
+    and table_name = 'N2'
+    and r_constraint_name in (
+        select constraint_name from all_constraints
+        where constraint_type in ('P', 'U')
+        and owner = 'PROD_SCHEME')
+    order by table_name, constraint_name;
+    
+ select constraint_name, table_name from all_constraints
+        where constraint_type in ('P', 'U')
+        and owner = 'PROD_SCHEME';
+        
 SET SERVEROUTPUT ON;
 
 CREATE OR REPLACE FUNCTION generate_code(scheme VARCHAR2, obj_type VARCHAR2, obj_name VARCHAR2)
@@ -288,7 +312,17 @@ BEGIN
       return lv_result;
 END;
 
-
+grant SELECT_CATALOG_ROLE to function create_table;
+CREATE OR REPLACE FUNCTION create_table(dev_scheme VARCHAR2, prod_scheme VARCHAR2, table_name VARCHAR2)
+RETURN NCLOB
+AS 
+lv_result NCLOB;
+BEGIN
+    select dbms_metadata.get_ddl('TABLE', table_name, dev_scheme) INTO lv_result from dual;
+    lv_result := CONCAT(REGEXP_REPLACE(lv_result, upper(dev_scheme),upper(prod_scheme)), ';');
+    
+    return lv_result;
+END;
 
 CREATE OR REPLACE FUNCTION is_diff_tables(dev_scheme VARCHAR2, dev_table VARCHAR2,                            
                                           prod_scheme VARCHAR2, prod_table VARCHAR2)
@@ -343,51 +377,77 @@ BEGIN
       return is_different_structure;
 END;
 
+CREATE OR REPLACE FUNCTION is_diff_reference_key(scheme_name VARCHAR2, table_nm VARCHAR2, constr_nm VARCHAR2)
+RETURN VARCHAR2
+IS
+lv_constr_nm VARCHAR2(30);    
+lv_table_nm VARCHAR2(30);
+
+BEGIN
+    select r_constraint_name into lv_constr_nm
+    from all_constraints
+    where r_owner = scheme_name
+    and constraint_type = 'R'   
+    and table_name = table_nm
+    and constraint_name=constr_nm;
+
+    
+    select table_name into lv_table_nm from all_constraints
+        where constraint_type in ('P', 'U')
+        and owner = scheme_name and constraint_name=lv_constr_nm;
+           
+   return lv_table_nm;
+END;
+
 CREATE OR REPLACE FUNCTION is_diff_constraints(dev_scheme VARCHAR2, dev_table VARCHAR2,                            
                                           prod_scheme VARCHAR2, prod_table VARCHAR2)
 RETURN BOOLEAN
 IS
 
 CURSOR curr_dev IS
-    SELECT owner, constraint_name, constraint_type, table_name, search_condition_vc, status 
+    SELECT owner, constraint_name, constraint_type, table_name, search_condition_vc, status, index_name 
     From all_constraints 
     WHERE owner=dev_scheme AND table_name=dev_table
-    ORDER BY search_condition_vc;
+    ORDER BY constraint_type;
     
 CURSOR curr_prod IS
-    SELECT owner, constraint_name, constraint_type, table_name, search_condition_vc, status 
+    SELECT owner, constraint_name, constraint_type, table_name, search_condition_vc, status, index_name 
     From all_constraints 
     WHERE owner=prod_scheme AND table_name=prod_table 
-    ORDER BY search_condition_vc;
+    ORDER BY constraint_type;
 
 dev_scheme_col curr_dev%ROWTYPE;
 prod_scheme_col curr_prod%ROWTYPE;
 
-is_different_constraint BOOLEAN;
+is_different_constraint BOOLEAN := FALSE;
 
 BEGIN
     FOR  dev_scheme_col IN curr_dev
         LOOP        
          FOR prod_scheme_col IN curr_prod
             LOOP
---            DBMS_OUTPUT.PUT_LINE('-----------' || prod_table || '-----------');
---            DBMS_OUTPUT.PUT_LINE(prod_scheme_col.CONSTRAINT_TYPE || ' ' || dev_scheme_col.CONSTRAINT_TYPE);
-           -- DBMS_OUTPUT.PUT_LINE(prod_scheme_col.SEARCH_CONDITION_VC || ' ' || dev_scheme_col.SEARCH_CONDITION_VC);
---            DBMS_OUTPUT.PUT_LINE(prod_scheme_col.STATUS || ' ' || dev_scheme_col.SEARCH_CONDITION_VC);
-            IF prod_scheme_col.CONSTRAINT_TYPE!=dev_scheme_col.CONSTRAINT_TYPE OR
+            IF  (prod_scheme_col.constraint_type='C' AND dev_scheme_col.constraint_type='C')
+            AND (prod_scheme_col.CONSTRAINT_TYPE!=dev_scheme_col.CONSTRAINT_TYPE OR
                 prod_scheme_col.SEARCH_CONDITION_VC!=dev_scheme_col.SEARCH_CONDITION_VC OR
-                prod_scheme_col.STATUS!=dev_scheme_col.STATUS THEN
+                prod_scheme_col.STATUS!=dev_scheme_col.STATUS) THEN
                 is_different_constraint := TRUE; 
-            ELSE
-                is_different_constraint := FALSE; 
+            ELSIF (prod_scheme_col.constraint_type='R' AND dev_scheme_col.constraint_type='R')
+            AND (prod_scheme_col.constraint_name != dev_scheme_col.constraint_name
+            OR is_diff_reference_key(dev_scheme, dev_scheme_col.table_name, dev_scheme_col.constraint_name)
+            !=is_diff_reference_key(prod_scheme, prod_scheme_col.table_name, prod_scheme_col.constraint_name))
+            THEN
+                is_different_constraint := TRUE; 
+            ELSIF (prod_scheme_col.constraint_type='P' AND dev_scheme_col.constraint_type='P') AND
+            not check_is_different_indexes(dev_scheme, dev_scheme_col.table_name, dev_scheme_col.index_name,
+                                                    prod_scheme, prod_scheme_col.table_name, prod_scheme_col.index_name)THEN
+                is_different_constraint := TRUE; 
             END IF;
-                is_different_constraint := TRUE; 
+
             END LOOP;
     END LOOP;
       
       return is_different_constraint;
 END;
-
 
 CREATE OR REPLACE FUNCTION get_diff_between_tables(dev_scheme VARCHAR2,
                                                     prod_scheme VARCHAR2)
@@ -416,7 +476,16 @@ BEGIN
                     IF is_diff_tables(dev_scheme, dev_scheme_row.TABLE_NAME,
                                     prod_scheme, prod_scheme_row.TABLE_NAME) THEN
                                     
-                        lv_result := CONCAT(lv_result, chr(10) || 'DROP AND RECREATE BECAUSE OF DIFFERENT TABLES STRUCTURE');    
+                        lv_result := CONCAT(lv_result, chr(10) || '--DROP AND RECREATE BECAUSE OF DIFFERENT TABLES STRUCTURE');    
+                        lv_result := CONCAT(lv_result, chr(10) || 
+                                   utl_lms.format_message('DROP TABLE %s.%s;',
+                                    prod_scheme, prod_scheme_row.TABLE_NAME)); 
+                        lv_result := CONCAT(lv_result, chr(10) || 
+                                   create_table(dev_scheme, prod_scheme, dev_scheme_row.TABLE_NAME));              
+                    ELSIF is_diff_constraints(dev_scheme, dev_scheme_row.TABLE_NAME,
+                                    prod_scheme, prod_scheme_row.TABLE_NAME) THEN
+                                    
+                    lv_result := CONCAT(lv_result, chr(10) || '--DROP AND RECREATE BECAUSE OF DIFFERENT TABLES CONSTRAINTS');    
                         lv_result := CONCAT(lv_result, chr(10) || 
                                    utl_lms.format_message('DROP TABLE %s.%s;',
                                     prod_scheme, prod_scheme_row.TABLE_NAME)); 
@@ -424,11 +493,7 @@ BEGIN
                                    create_table(dev_scheme, prod_scheme, dev_scheme_row.TABLE_NAME));              
                     END IF;   
                     
---                    IF is_diff_constraints(dev_scheme, dev_scheme_row.TABLE_NAME,
---                                    prod_scheme, prod_scheme_row.TABLE_NAME) THEN
---                                    
---                    result := CONCAT(result, chr(10) || 'Different table constraints of table: ' || dev_scheme_row.TABLE_NAME);           
---                    END IF;  
+                     
                 END IF;
             END LOOP;    
             
@@ -486,20 +551,8 @@ BEGIN
   END LOOP;
 END;
 
-grant SELECT_CATALOG_ROLE to function create_table;
-
-CREATE OR REPLACE FUNCTION create_table(dev_scheme VARCHAR2, prod_scheme VARCHAR2, table_name VARCHAR2)
-RETURN NCLOB
-AS 
-lv_result NCLOB;
-BEGIN
-    select dbms_metadata.get_ddl('TABLE', table_name, dev_scheme) INTO lv_result from dual;
-    lv_result := CONCAT(REGEXP_REPLACE(lv_result, upper(dev_scheme),upper(prod_scheme)), ';');
-    
-    return lv_result;
-END;
-
 select dbms_metadata.get_ddl('TABLE', '"MY_TAB"', '"DEV_SCHEME"') from dual;
+
 --WITH FindRoot AS (
 --    SELECT Id, ParentId, CAST(Id AS NCHAR(32767)), Path, 0 Distance
 --    FROM dbo.MyTable
@@ -511,7 +564,6 @@ select dbms_metadata.get_ddl('TABLE', '"MY_TAB"', '"DEV_SCHEME"') from dual;
 --    JOIN FindRoot C
 --    ON C.ParentId = P.Id AND P.ParentId <> P.Id AND C.ParentId <> C.Id
 -- )
-
 --SELECT *
 --FROM FindRoot R
 --WHERE R.Id = R.ParentId 

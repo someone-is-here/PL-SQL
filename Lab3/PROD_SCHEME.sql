@@ -57,3 +57,18 @@ CREATE OR REPLACE FUNCTION find_sum(number_1 NUMBER, number_2 NUMBER)
         return sum_;
     END;
     
+create table n1(
+    x number primary key,
+     y number
+);
+ALTER TABLE a1
+  ADD z number primary key;
+create table n2(
+    x1 number primary key,
+    y1 number,
+    z1 number,
+    x1_ref number,
+    CONSTRAINT x1_ref_name
+    FOREIGN KEY (x1_ref)
+    REFERENCES a1(z)
+);    

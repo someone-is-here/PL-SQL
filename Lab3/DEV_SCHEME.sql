@@ -77,3 +77,18 @@ CREATE TABLE a1(
 create index a3_index on a1(y);
 create index a2_index on a1(x,y);
 create index a1_index on a1(x);
+
+create table n1(
+    x number primary key,
+     y number
+);
+
+create table n2(
+    x1 number primary key,
+    y1 number,
+    z1 number,
+    x1_ref number,
+    CONSTRAINT x1_ref_name
+    FOREIGN KEY (x1_ref)
+    REFERENCES n1(x)
+);
