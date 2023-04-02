@@ -50,18 +50,18 @@ WHERE owner='DEV_SCHEME' AND table_name='DEPARTMENTS';
 
 select *
     from all_constraints
-    where r_owner = 'PROD_SCHEME'
+    where r_owner = 'DEV_SCHEME'
     and constraint_type = 'R'   
-    and table_name = 'N2'
+    and table_name = 'USERS'
     and r_constraint_name in (
         select constraint_name from all_constraints
         where constraint_type in ('P', 'U')
-        and owner = 'PROD_SCHEME')
+        and owner = 'DEV_SCHEME')
     order by table_name, constraint_name;
     
- select constraint_name, table_name from all_constraints
+ select * from all_constraints
         where constraint_type in ('P', 'U')
-        and owner = 'PROD_SCHEME';
+        and owner = 'DEV_SCHEME';
         
 SET SERVEROUTPUT ON;
 
@@ -390,13 +390,19 @@ BEGIN
     and constraint_type = 'R'   
     and table_name = table_nm
     and constraint_name=constr_nm;
-
     
     select table_name into lv_table_nm from all_constraints
         where constraint_type in ('P', 'U')
         and owner = scheme_name and constraint_name=lv_constr_nm;
-           
+        
    return lv_table_nm;
+   
+   EXCEPTION
+        WHEN no_data_found
+    THEN
+        lv_table_nm := 'null';
+        return lv_table_nm;
+
 END;
 
 CREATE OR REPLACE FUNCTION is_diff_constraints(dev_scheme VARCHAR2, dev_table VARCHAR2,                            
@@ -418,7 +424,6 @@ CURSOR curr_prod IS
 
 dev_scheme_col curr_dev%ROWTYPE;
 prod_scheme_col curr_prod%ROWTYPE;
-
 is_different_constraint BOOLEAN := FALSE;
 
 BEGIN
@@ -431,12 +436,12 @@ BEGIN
                 prod_scheme_col.SEARCH_CONDITION_VC!=dev_scheme_col.SEARCH_CONDITION_VC OR
                 prod_scheme_col.STATUS!=dev_scheme_col.STATUS) THEN
                 is_different_constraint := TRUE; 
-            ELSIF (prod_scheme_col.constraint_type='R' AND dev_scheme_col.constraint_type='R')
-            AND (prod_scheme_col.constraint_name != dev_scheme_col.constraint_name
+            ELSIF (prod_scheme_col.constraint_type='R' AND dev_scheme_col.constraint_type='R') AND
+              (prod_scheme_col.constraint_name != dev_scheme_col.constraint_name
             OR is_diff_reference_key(dev_scheme, dev_scheme_col.table_name, dev_scheme_col.constraint_name)
-            !=is_diff_reference_key(prod_scheme, prod_scheme_col.table_name, prod_scheme_col.constraint_name))
-            THEN
+            !=is_diff_reference_key(prod_scheme, prod_scheme_col.table_name, prod_scheme_col.constraint_name)) THEN
                 is_different_constraint := TRUE; 
+
             ELSIF (prod_scheme_col.constraint_type='P' AND dev_scheme_col.constraint_type='P') AND
             not check_is_different_indexes(dev_scheme, dev_scheme_col.table_name, dev_scheme_col.index_name,
                                                     prod_scheme, prod_scheme_col.table_name, prod_scheme_col.index_name)THEN
@@ -473,6 +478,12 @@ BEGIN
             LOOP
                 IF prod_scheme_row.TABLE_NAME = dev_scheme_row.TABLE_NAME THEN
                     is_found := TRUE;
+                    IF check_table_on_circular_references(dev_scheme,  dev_scheme_row.TABLE_NAME) THEN
+                            DBMS_OUTPUT.PUT_LINE('------CIRCULAR REFERENCE FOUND ON TABLE ' || dev_scheme ||'.'|| dev_scheme_row.table_name);
+                    END IF;
+                    IF check_table_on_circular_references(prod_scheme,  prod_scheme_row.TABLE_NAME) THEN
+                            DBMS_OUTPUT.PUT_LINE('------CIRCULAR REFERENCE FOUND ON TABLE ' || prod_scheme ||'.'|| prod_scheme_row.table_name);
+                    END IF;
                     IF is_diff_tables(dev_scheme, dev_scheme_row.TABLE_NAME,
                                     prod_scheme, prod_scheme_row.TABLE_NAME) THEN
                                     
@@ -506,6 +517,95 @@ BEGIN
     return lv_result;
 END;
 
+CREATE OR REPLACE FUNCTION find_circular_references(scheme_name VARCHAR2, table_nm VARCHAR2, constr_nm VARCHAR2,
+                                                        old_name VARCHAR2, table_temp_name VARCHAR2)
+RETURN VARCHAR2
+IS
+lv_curr_table_name VARCHAR2(100);
+CURSOR curr_names_fk(tab_name VARCHAR2) IS 
+select *
+    from all_constraints
+    where r_owner = scheme_name
+    and constraint_type = 'R'   
+    and table_name = tab_name
+    and r_constraint_name in (
+        select constraint_name from all_constraints
+        where constraint_type in ('P', 'U')
+        and owner = scheme_name)
+    order by table_name, constraint_name;
+    
+lv_row curr_names_fk%ROWTYPE;
+lv_row_count number := 0;
+sql_stmt VARCHAR2(50);
+
+BEGIN
+    lv_curr_table_name := is_diff_reference_key(scheme_name , table_nm, constr_nm);
+    EXECUTE IMMEDIATE  utl_lms.format_message('INSERT INTO %s(name) VALUES (%s)', table_temp_name, CONCAT('''', table_nm||''''));
+    IF table_nm != 'null' THEN
+        EXECUTE IMMEDIATE  utl_lms.format_message('select COUNT(name) from %s WHERE name=%s', table_temp_name, CONCAT('''', table_nm || '''')) INTO lv_row_count;
+    END IF;                         
+ WHILE lv_curr_table_name != 'null' AND lv_curr_table_name != old_name AND lv_row_count <= 1
+  LOOP
+  OPEN curr_names_fk(lv_curr_table_name);
+    LOOP
+        FETCH curr_names_fk INTO lv_row;
+        lv_curr_table_name := find_circular_references(scheme_name , lv_curr_table_name, lv_row.constraint_name, old_name, table_temp_name);
+  
+         EXECUTE IMMEDIATE  utl_lms.format_message('INSERT INTO %s(name) VALUES (%s)', table_temp_name, CONCAT('''', lv_curr_table_name||''''));
+         IF table_nm != 'null' THEN
+            EXECUTE IMMEDIATE  utl_lms.format_message('select COUNT(name) from %s WHERE name=%s', table_temp_name, CONCAT('''', lv_curr_table_name || '''')) INTO lv_row_count;
+        END IF; 
+    
+        EXIT WHEN curr_names_fk%notfound OR 
+        lv_curr_table_name = old_name OR
+        lv_curr_table_name='null' OR
+        lv_row_count > 1;
+        
+    END LOOP;
+    CLOSE curr_names_fk;
+    END LOOP;
+    
+    IF lv_curr_table_name = old_name THEN
+        return lv_curr_table_name;
+    END IF;
+    IF lv_row_count > 1 THEN
+        return old_name;
+    END IF;
+    
+    return 'null';
+END;
+
+CREATE OR REPLACE FUNCTION check_table_on_circular_references(scheme_name VARCHAR2, table_nm VARCHAR2)
+RETURN BOOLEAN
+IS
+CURSOR curr_constr IS
+select *
+    from all_constraints
+    where r_owner = scheme_name
+    and constraint_type = 'R'   
+    and table_name = table_nm
+    and r_constraint_name in (
+        select constraint_name from all_constraints
+        where constraint_type in ('P', 'U')
+        and owner = scheme_name)
+    order by table_name, constraint_name;
+
+lv_constr_row curr_constr%ROWTYPE;
+lv_table_name VARCHAR(30) := 'temp12345678';
+BEGIN
+    FOR lv_constr_row IN curr_constr
+    LOOP
+     EXECUTE IMMEDIATE  utl_lms.format_message('CREATE TABLE %s (name VARCHAR2(100))', lv_table_name);
+        IF find_circular_references(scheme_name, table_nm, lv_constr_row.constraint_name, table_nm, lv_table_name) = table_nm THEN
+            EXECUTE IMMEDIATE utl_lms.format_message('DROP TABLE %s', lv_table_name);
+            return true;
+        ELSE
+            EXECUTE IMMEDIATE utl_lms.format_message('DROP TABLE %s', lv_table_name);
+        END IF;
+    END LOOP;
+    return false;
+END;
+
 CREATE OR REPLACE FUNCTION get_diff_between_schemes(dev_scheme VARCHAR2,
                                                     prod_scheme VARCHAR2)
 RETURN NCLOB
@@ -518,16 +618,16 @@ lv_result NCLOB;
 
 BEGIN
 --workable
---    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_function));
---    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_function));
---    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
---    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
---    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_package));
---    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_package));
---    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_package_body));
---    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_package_body));
---    lv_result := CONCAT(lv_result, create_or_update_indexes(dev_scheme, prod_scheme));
---    lv_result := CONCAT(lv_result, remove_prod_indexes(dev_scheme, prod_scheme));
+    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_function));
+    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_function));
+    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
+    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_procedure));
+    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_package));
+    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_package));
+    lv_result := CONCAT(lv_result,  create_objects_in_prod(dev_scheme, prod_scheme, lc_package_body));
+    lv_result := CONCAT(lv_result,  remove_objects_in_prod(dev_scheme, prod_scheme, lc_package_body));
+    lv_result := CONCAT(lv_result, create_or_update_indexes(dev_scheme, prod_scheme));
+    lv_result := CONCAT(lv_result, remove_prod_indexes(dev_scheme, prod_scheme));
     
     lv_result := CONCAT(lv_result,  get_diff_between_tables(dev_scheme, prod_scheme)); 
     
@@ -540,9 +640,10 @@ DECLARE
   lv_buffer  VARCHAR2(32766);
   lv_amount  BINARY_INTEGER := 32766;
   lv_offset     INTEGER := 1;
+  res BOOLEAN;
 BEGIN
-  lv_result := get_diff_between_schemes('DEV_SCHEME', 'PROD_SCHEME');
-  
+    lv_result := get_diff_between_schemes('DEV_SCHEME', 'PROD_SCHEME');
+
   LOOP
     DBMS_LOB.READ(lv_result, lv_amount, lv_offset, lv_buffer);
     DBMS_OUTPUT.PUT_LINE(lv_buffer);
@@ -550,22 +651,3 @@ BEGIN
     EXIT WHEN lv_amount > DBMS_LOB.GETLENGTH(lv_result) - lv_offset + 1;
   END LOOP;
 END;
-
-select dbms_metadata.get_ddl('TABLE', '"MY_TAB"', '"DEV_SCHEME"') from dual;
-
---WITH FindRoot AS (
---    SELECT Id, ParentId, CAST(Id AS NCHAR(32767)), Path, 0 Distance
---    FROM dbo.MyTable
---
---    UNION ALL
---
---    SELECT C.Id, P.ParentId, C.Path + N' > ' + CAST(P.Id AS NCHAR(32767)), C.Distance + 1
---    FROM dbo.MyTable P
---    JOIN FindRoot C
---    ON C.ParentId = P.Id AND P.ParentId <> P.Id AND C.ParentId <> C.Id
--- )
---SELECT *
---FROM FindRoot R
---WHERE R.Id = R.ParentId 
---  AND R.ParentId <> 0
---  AND R.Distance > 0;

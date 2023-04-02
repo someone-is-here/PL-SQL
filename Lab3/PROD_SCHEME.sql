@@ -63,6 +63,7 @@ create table n1(
 );
 ALTER TABLE a1
   ADD z number primary key;
+  
 create table n2(
     x1 number primary key,
     y1 number,

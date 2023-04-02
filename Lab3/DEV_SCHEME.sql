@@ -83,6 +83,11 @@ create table n1(
      y number
 );
 
+ALTER TABLE n1
+  ADD CONSTRAINT x1_ref_n1
+    FOREIGN KEY (y)
+    REFERENCES n2(x1);
+  
 create table n2(
     x1 number primary key,
     y1 number,
