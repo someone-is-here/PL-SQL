@@ -517,6 +517,42 @@ BEGIN
     return lv_result;
 END;
 
+CREATE OR REPLACE FUNCTION remove_prod_tables(dev_scheme VARCHAR2,
+                                                    prod_scheme VARCHAR2)
+RETURN NCLOB
+IS
+CURSOR curr_dev_scheme 
+IS SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = dev_scheme;
+
+CURSOR curr_prod_scheme 
+IS SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = prod_scheme;
+
+is_found BOOLEAN;
+lv_result NCLOB;
+
+BEGIN
+
+ FOR prod_scheme_row IN curr_prod_scheme
+   LOOP
+        is_found := FALSE;
+        
+         FOR dev_scheme_row IN curr_dev_scheme
+            LOOP
+                IF prod_scheme_row.TABLE_NAME = dev_scheme_row.TABLE_NAME THEN
+                    is_found := TRUE;        
+                    END IF;   
+            END LOOP;    
+            
+            IF is_found = FALSE THEN          
+               lv_result := CONCAT(lv_result, chr(10) || 
+                                   utl_lms.format_message('DROP TABLE %s.%s;',
+                                    prod_scheme, prod_scheme_row.TABLE_NAME)); 
+            END IF;
+   END LOOP;
+   
+    return lv_result;
+END;
+
 CREATE OR REPLACE FUNCTION find_circular_references(scheme_name VARCHAR2, table_nm VARCHAR2, constr_nm VARCHAR2,
                                                         old_name VARCHAR2, table_temp_name VARCHAR2)
 RETURN VARCHAR2
@@ -630,7 +666,7 @@ BEGIN
     lv_result := CONCAT(lv_result, remove_prod_indexes(dev_scheme, prod_scheme));
     
     lv_result := CONCAT(lv_result,  get_diff_between_tables(dev_scheme, prod_scheme)); 
-    
+    lv_result := CONCAT(lv_result,  remove_prod_tables(dev_scheme, prod_scheme));    
     return lv_result;
 END;
 

@@ -73,3 +73,6 @@ create table n2(
     FOREIGN KEY (x1_ref)
     REFERENCES a1(z)
 );    
+CREATE TABLE HI(
+    str VARCHAR2(15)
+);
