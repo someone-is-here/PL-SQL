@@ -214,6 +214,10 @@ lv_keys_temp JSON_KEY_LIST;
 lv_jo_table JSON_OBJECT_T;
 lv_jo_param JSON_OBJECT_T;
 lv_jo_temp JSON_OBJECT_T;
+
+lv_table NCLOB;
+lv_column NCLOB;
+
 BEGIN
     lv_ja := new JSON_ARRAY_T;
     
@@ -255,6 +259,18 @@ BEGIN
                         IF upper(lv_keys_temp(1)) = 'PRIMARY KEY' THEN
                             lv_ja := lv_jo_temp.get_array(lv_keys_temp(1));
                             for k in 0..lv_ja.get_size - 1 LOOP
+                                DBMS_OUTPUT.put_line(utl_lms.format_message('CREATE SEQUENCE %s_%s START WITH 1 INCREMENT BY 1 CACHE 100;', lv_keys_tab_names(i), REPLACE(lv_ja.get(k).to_string, '"', '')));   
+                                DBMS_OUTPUT.put_line(utl_lms.format_message('CREATE OR REPLACE TRIGGER %s_%s
+                                BEFORE INSERT ON %s
+                                FOR EACH ROW
+                                BEGIN
+                                :new.id := %s_%s.nextval;
+                                END;',
+                                lv_keys_tab_names(i),
+                                 REPLACE(lv_ja.get(k).to_string, '"',''),
+                                 lv_keys_tab_names(i),
+                                 lv_keys_tab_names(i),
+                                REPLACE(lv_ja.get(k).to_string, '"', '')));
                                 lv_result_constr := CONCAT(lv_result_constr, lv_ja.get(k).to_string || ', ');
                                 IF k = lv_ja.get_size - 1 THEN
                                     lv_result_constr := SUBSTR(lv_result_constr, 1, length(lv_result_constr) - 2);
@@ -458,7 +474,7 @@ BEGIN
                 lv_ja := js_obj.get_array(lv_keys(i));
                 lv_result_query := CONCAT(lv_result_query, '( ');
                 for j in 0..lv_ja.get_size - 1 LOOP
-                    lv_result_query := CONCAT(lv_result_query, REPLACE(lv_ja.get(j).to_string, '"', '') || ', ');
+                    lv_result_query := CONCAT(lv_result_query, lv_ja.get(j).to_string || ', ');
                 END LOOP;
                 lv_result_query := SUBSTR(lv_result_query, 1, LENGTH(lv_result_query) - 2);
                 lv_result_query := CONCAT(lv_result_query, ');');
