@@ -1,0 +1,1 @@
+if the files aren't created in the OS: https://forums.oracle.com/ords/apexds/post/problems-writing-to-directories-in-oracle-21c-windows-1392
