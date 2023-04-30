@@ -152,19 +152,47 @@ DECLARE
                         }}
                     ]}
 	}},
+    {''update'': {
+		''table'': ''students'',
+		''columns'': [''name'', ''surname'', ''group_id''],
+        ''select'': {
+                ''columns'': [''name'', ''surname'', ''group_id''],
+                ''tables'': [''students'']
+            },
+        ''WHERE'': {
+                    ''exists'': {
+                            ''select'': {
+                                ''columns'': [''id'', ''name'', ''surname''],
+                                ''tables'': [''students'']
+                                }
+                    }
+                }
+	}},
     {''delete'': {
 		''table'': ''students''
 	}},
     {''delete'': {
 		''table'': ''students'',
-		''values'': [{''id'': 1},{''name'':''Tanusha''}],
-         ''WHERE'': {
-                    ''and'':[
+        ''WHERE'': {
+                ''in'': [
+                    {''group_id'': {
+                        ''value'': {   
+                                ''select'': {
+                                    ''columns'': [''id'', ''name''],
+                                    ''tables'': [''groups''],
+                                     ''conditions'':{''WHERE'': {
+                                             ''and'':[
                         {''id'': {
                             ''operator'': ''>'',
                             ''value'': 2
                         }}
                     ]}
+                                }
+                            }
+                            }
+                    }}
+                ]
+       }
 	}},
     {''drop'': {
         ''tables'': [''students'', ''groups'']
@@ -352,7 +380,7 @@ BEGIN
         ELSIF upper(lv_keys(i)) = 'CONDITIONS' THEN
             lv_jo_temp := ja_obj.get_object(lv_keys(i)); --{''where''}
             
-            lv_jk_temp := lv_jo_temp.get_keys; -- where/ group by/ heaving/ order by/
+            lv_jk_temp := lv_jo_temp.get_keys;
             FOR p in 1..lv_jk_temp.COUNT LOOP
                 IF lv_jk_temp(p) = 'WHERE' THEN
                     lv_result_query := CONCAT(lv_result_query, ' ' || REPLACE(lv_jk_temp(p), '"', ''));
@@ -402,7 +430,7 @@ BEGIN
                             IF INSTR(upper(lv_jk_temp_inner(j)), 'IN') > 0 THEN
                                 lv_jo_field_temp := JSON_OBJECT_T.parse(lv_jo_field_temp.get(lv_jk_field_temp(n)).to_string); --{select}
                                 lv_jo_field_temp := lv_jo_field_temp.get_object('select');
-                                lv_field := upper(lv_jk_temp_inner(j)) || '( ' || parse_json_select_object(lv_jo_field_temp);
+                                lv_field := CONCAT(lv_field, ' ' || upper(lv_jk_temp_inner(j)) || '( ' || parse_json_select_object(lv_jo_field_temp));
                                 lv_field:=SUBSTR(lv_field, 1, LENGTH(lv_field)-1);
                                 lv_field := CONCAT(lv_field, ')');     
                             ELSE
@@ -523,6 +551,20 @@ BEGIN
                     lv_result_query := CONCAT(lv_result_query, REPLACE(lv_jk_temp(1), '"', '') || '=' || lv_jo_temp.get(lv_jk_temp(1)).to_string || ', ');
                 END LOOP;
                 lv_result_query := SUBSTR(lv_result_query, 1, LENGTH(lv_result_query) - 2);
+      ELSIF upper(lv_keys(i))='COLUMNS' THEN
+            lv_result_query := CONCAT(lv_result_query, 'SET '); 
+            lv_ja := js_obj.get_array(lv_keys(i));
+            lv_result_query := CONCAT(lv_result_query, '( ');
+            for j in 0..lv_ja.get_size - 1 LOOP
+                lv_result_query := CONCAT(lv_result_query, REPLACE(lv_ja.get(j).to_string, '"','') || ', ');
+            END LOOP;
+            lv_result_query := SUBSTR(lv_result_query, 1, LENGTH(lv_result_query) - 2);
+            lv_result_query := CONCAT(lv_result_query, ') ');
+       ELSIF upper(lv_keys(i))='SELECT' THEN
+             lv_jo_temp := js_obj.get_object(lv_keys(i));
+             lv_field := upper(' = ( ' || parse_json_select_object(lv_jo_temp));
+             lv_field:=SUBSTR(lv_field, 1, LENGTH(lv_field)-1);
+             lv_result_query := CONCAT(lv_result_query, lv_field || ')');
        ELSIF upper(lv_keys(i)) = 'WHERE' THEN
                lv_result_query := CONCAT(lv_result_query, ' ' || REPLACE(lv_keys(i), '"', ''));
                     lv_jo_temp_inner := js_obj.get_object(lv_keys(i)); --and & or
@@ -571,17 +613,25 @@ BEGIN
                             IF INSTR(upper(lv_jk_temp_inner(j)), 'IN') > 0 THEN
                                 lv_jo_field_temp := JSON_OBJECT_T.parse(lv_jo_field_temp.get(lv_jk_field_temp(n)).to_string); --{select}
                                 lv_jo_field_temp := lv_jo_field_temp.get_object('select');
-                                lv_field := upper(lv_jk_temp_inner(j)) || '( ' || parse_json_select_object(lv_jo_field_temp);
+                                lv_field := CONCAT(lv_field, ' ' || upper(lv_jk_temp_inner(j)) || '( ' || parse_json_select_object(lv_jo_field_temp));
                                 lv_field:=SUBSTR(lv_field, 1, LENGTH(lv_field)-1);
-                                lv_field := CONCAT(lv_field, ')');     
+                                lv_field := CONCAT(lv_field, ')');
                             ELSE
                                 lv_field := CONCAT(lv_field, ' ' || REPLACE(lv_jo_field_temp.get(lv_jk_field_temp(n)).to_string, '"', ''));
                             END IF;
                         END IF;
                     END LOOP;
-                        lv_result_query := CONCAT(lv_result_query || ' ', lv_field || ' ' || lv_jk_temp_inner(j));
+                    lv_result_query := CONCAT(lv_result_query || ' ', lv_field || ' ' || lv_jk_temp_inner(j));
+                    
                 END LOOP;
                 lv_result_query := SUBSTR(lv_result_query, 1, LENGTH(lv_result_query) - LENGTH(lv_jk_temp_inner(j)));
+                 ELSIF INSTR(upper(lv_jk_temp_inner(j)), 'EXISTS') > 0 THEN
+                    lv_result_query := CONCAT(lv_result_query || ' ', upper(lv_jk_temp_inner(j)) || '(');
+                    lv_jo_field_temp := lv_jo_temp_inner.get_object(lv_jk_temp_inner(j)); --{'select'}
+                    lv_jk_field_temp := lv_jo_field_temp.get_keys;
+                    lv_jo_field_temp := lv_jo_field_temp.get_object(lv_jk_field_temp(1)); 
+                    lv_field := parse_json_select_object(lv_jo_field_temp);
+                    lv_result_query := CONCAT(lv_result_query || ' ', SUBSTR(lv_field, 1, length(lv_field)-1) || ')');
                END IF; 
             END LOOP;
         END IF;
@@ -664,7 +714,7 @@ BEGIN
                             IF INSTR(upper(lv_jk_temp_inner(j)), 'IN') > 0 THEN
                                 lv_jo_field_temp := JSON_OBJECT_T.parse(lv_jo_field_temp.get(lv_jk_field_temp(n)).to_string); --{select}
                                 lv_jo_field_temp := lv_jo_field_temp.get_object('select');
-                                lv_field := upper(lv_jk_temp_inner(j)) || '( ' || parse_json_select_object(lv_jo_field_temp);
+                                lv_field := CONCAT(lv_field, ' ' || upper(lv_jk_temp_inner(j)) || '( ' || parse_json_select_object(lv_jo_field_temp));
                                 lv_field:=SUBSTR(lv_field, 1, LENGTH(lv_field)-1);
                                 lv_field := CONCAT(lv_field, ')');     
                             ELSE
@@ -675,6 +725,13 @@ BEGIN
                         lv_result_query := CONCAT(lv_result_query || ' ', lv_field || ' ' || lv_jk_temp_inner(j));
                 END LOOP;
                 lv_result_query := SUBSTR(lv_result_query, 1, LENGTH(lv_result_query) - LENGTH(lv_jk_temp_inner(j)));
+                 ELSIF INSTR(upper(lv_jk_temp_inner(j)), 'EXISTS') > 0 THEN
+                    lv_result_query := CONCAT(lv_result_query || ' ', upper(lv_jk_temp_inner(j)) || '(');
+                    lv_jo_field_temp := lv_jo_temp_inner.get_object(lv_jk_temp_inner(j)); --{'select'}
+                    lv_jk_field_temp := lv_jo_field_temp.get_keys;
+                    lv_jo_field_temp := lv_jo_field_temp.get_object(lv_jk_field_temp(1)); 
+                    lv_field := parse_json_select_object(lv_jo_field_temp);
+                    lv_result_query := CONCAT(lv_result_query || ' ', SUBSTR(lv_field, 1, length(lv_field)-1) || ')');
                END IF; 
             END LOOP;
         END IF;
@@ -710,7 +767,7 @@ BEGIN
         END CASE;
         
     END LOOP;
-    return 'Hi';
+    return 'Done';
 END;
 
 declare
@@ -733,3 +790,4 @@ begin
     UTL_FILE.FCLOSE(fhandle);
     lv_res := parse_json(lv_json_str);
 end;
+
