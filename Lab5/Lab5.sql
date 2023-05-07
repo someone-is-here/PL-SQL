@@ -221,6 +221,7 @@ END data_rollback;
 PROCEDURE data_rollback(msc number)
 IS
 BEGIN
+    dbms_output.put_line(TO_TIMESTAMP(CURRENT_TIMESTAMP - numToDSInterval( msc / 1000, 'second' )));
     roll_back(TO_TIMESTAMP(CURRENT_TIMESTAMP - numToDSInterval( msc / 1000, 'second' )));
 END data_rollback;
 PROCEDURE create_report(to_date TIMESTAMP)
@@ -425,14 +426,13 @@ END data_rollback_overload;
 
 CREATE OR REPLACE PROCEDURE roll_back(time_back TIMESTAMP)
 IS
-PRAGMA AUTONOMOUS_TRANSACTION;
-CURSOR c_journal_country(id NUMBER) IS SELECT * FROM journal_country WHERE op_id=id;
+CURSOR c_journal_country(id_ NUMBER) IS SELECT * FROM journal_country WHERE op_id=id_;
 r_country journal_country%rowtype;
-CURSOR c_journal_city(id NUMBER) IS SELECT * FROM journal_city WHERE op_id=id;
+CURSOR c_journal_city(id_ NUMBER) IS SELECT * FROM journal_city WHERE op_id=id_;
 r_city journal_city%rowtype;
-CURSOR c_journal_department(id NUMBER) IS SELECT * FROM journal_department WHERE op_id=id;
+CURSOR c_journal_department(id_ NUMBER) IS SELECT * FROM journal_department WHERE op_id=id_;
 r_department journal_department%rowtype;
-CURSOR c_journal_employee(id NUMBER) IS SELECT * FROM journal_employee WHERE op_id=id;
+CURSOR c_journal_employee(id_ NUMBER) IS SELECT * FROM journal_employee WHERE op_id=id_;
 r_employee journal_employee%rowtype;
 CURSOR c_get_full_journal IS SELECT * FROM full_journal WHERE op_time > time_back order by op_time DESC;
 wrong_operation EXCEPTION;
@@ -442,62 +442,73 @@ BEGIN
         CASE r_item.table_name
             WHEN 'journal_country' THEN 
               OPEN c_journal_country(r_item.op_id);
-               FETCH c_journal_country INTO r_country;
+              FETCH c_journal_country INTO r_country;
+              CLOSE c_journal_country;
                dbms_output.put_line('journal_country'|| ' ' ||r_country.op ||r_country.op_id);
                 CASE r_country.op
                 WHEN 'I' THEN
                   DELETE FROM country WHERE id=r_country.id;
+                  commit;
                 WHEN 'U' THEN
                     UPDATE country SET 
                         country.name=r_country.name,
                         country.abbr=r_country.abbr 
                         WHERE country.id=r_country.id;
+                        commit;
                 WHEN 'D' THEN
                  INSERT INTO country VALUES(r_country.id, r_country.name, r_country.abbr);
+                 commit;
                 ELSE raise wrong_operation;
                 END CASE;
-              CLOSE c_journal_country;
             WHEN 'journal_city' THEN
              OPEN c_journal_city(r_item.op_id);
              FETCH c_journal_city INTO r_city;
+             CLOSE c_journal_city;
              dbms_output.put_line('journal_city'|| ' ' || r_city.op || r_city.op_id);
                 CASE r_city.op
                 WHEN 'I' THEN
                   DELETE FROM city WHERE id=r_city.id;
+                  commit;
                 WHEN 'U' THEN
                     UPDATE city SET 
                         city.name=r_city.name,
                         city.country_id=r_city.country_id 
                         WHERE city.id=r_city.id;
+                        commit;
                 WHEN 'D' THEN
                  INSERT INTO city VALUES(r_city.id, r_city.name, r_city.country_id);
+                 commit;
                 ELSE raise wrong_operation;
                 END CASE;
-              CLOSE c_journal_city;
             WHEN 'journal_department' THEN
              OPEN c_journal_department(r_item.op_id);
               FETCH c_journal_department INTO r_department;
+               CLOSE c_journal_department;
                 dbms_output.put_line('journal_department'|| ' ' ||r_department.op||r_department.op_id);
                 CASE r_department.op
                 WHEN 'I' THEN
                   DELETE FROM department WHERE department_id=r_department.department_id;
+                  commit;
                 WHEN 'U' THEN
                     UPDATE department SET 
                         department.department_name=r_department.department_name,
                         department.city_id=r_department.city_id 
                         WHERE department.department_id=r_department.department_id;
+                        commit;
                 WHEN 'D' THEN
                  INSERT INTO department VALUES(r_department.department_id, r_department.department_name, r_department.city_id);
+                 commit;
                 ELSE raise wrong_operation;
                 END CASE;
-              CLOSE c_journal_department;
             WHEN 'journal_employee' THEN
              OPEN c_journal_employee(r_item.op_id);
                 FETCH c_journal_employee INTO r_employee;
+                CLOSE c_journal_employee;
                 dbms_output.put_line('journal_employee' || ' ' || r_employee.op || r_employee.op_id);
                 CASE r_employee.op
                 WHEN 'I' THEN
                   DELETE FROM employee WHERE emp_id=r_employee.emp_id;
+                  commit;
                 WHEN 'U' THEN
                     UPDATE employee SET 
                         employee.emp_name=r_employee.emp_name,
@@ -506,17 +517,18 @@ BEGIN
                         employee.salary=r_employee.salary,
                          employee.department_id=r_employee.department_id
                         WHERE employee.emp_id=r_employee.emp_id;
+                        commit;
                 WHEN 'D' THEN
                  INSERT INTO employee VALUES(r_employee.emp_id, r_employee.emp_name, r_employee.position,
                  r_employee.hire_date, r_employee.salary, r_employee.department_id);
+                 commit;
                 ELSE raise wrong_operation;
                 END CASE;
-              CLOSE c_journal_employee;
             ELSE raise wrong_operation;
         END CASE;
-      commit;
      END IF;      
     END LOOP;
+    commit;
 END;
 
 INSERT INTO country VALUES (1, 'United States', 'US');
@@ -550,16 +562,17 @@ select * from journal_employee;
 
 
 BEGIN
-    data_rollback_overload.data_rollback(TO_TIMESTAMP('01.05.23 23:09:23,674000000'));
-    data_rollback_overload.create_report_from_old(TO_TIMESTAMP('01.05.23 23:09:23,674000000'));
+    data_rollback_overload.data_rollback(300000);
+    data_rollback_overload.create_report(TO_TIMESTAMP(CURRENT_TIMESTAMP));
 END;
 
 
-SELECT * FROM full_journal WHERE op_time > TO_TIMESTAMP('01.05.23 22:18:40') order by op_time DESC;
+SELECT * FROM full_journal order by op_time DESC;
 select * from department;
 select * from employee;
 select * from city;
 select * from country;
+
 drop table employee;
 drop table journal_employee;
 drop table department;
