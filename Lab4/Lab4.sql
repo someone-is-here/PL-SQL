@@ -205,6 +205,117 @@ BEGIN
   UTL_FILE.FCLOSE(out_file);
 END;
 
+--write into file json object
+DECLARE
+  out_File  UTL_FILE.FILE_TYPE;
+  lc_dir_name VARCHAR2(6) := 'RTVMS2';
+  lc_file_name VARCHAR(8) := 'test.txt';
+  lc_text_input NCLOB := '{''script'': [
+	{''create'': {
+        ''t1'': {
+			''columns'': {
+				''id'': {
+                    ''type'': ''number'',
+                    ''allow_null'': ''NOT NULL''
+                },
+				''name'': {
+					''type'': ''varchar2'',
+					''size'': 50,
+                    ''allow_null'': ''NOT NULL''
+				}               
+			},
+            ''constraints'': {
+				''t1_pk'': {
+                    ''PRIMARY KEY'': [''id'']
+                }
+			}
+			
+        },
+        ''t2'': {
+			''columns'': {
+				''id'': {
+                    ''type'': ''number'',
+                    ''allow_null'': ''NOT NULL''
+                },
+				''val'': {
+					''type'': ''varchar2'',
+					''size'': 50,
+                    ''allow_null'': ''NOT NULL''
+				},
+                ''num'': {
+                    ''type'': ''number'',
+                    ''allow_null'': ''NOT NULL''
+                },
+                 ''ref_ce'': {
+                    ''type'': ''number'',
+                    ''allow_null'': ''NOT NULL''
+                }
+			},
+			''constraints'': {
+				''t2_pk'': {
+                    ''PRIMARY KEY'': [''id'']
+                },
+                ''t2_t1_fk'': {
+                    ''FOREIGN KEY'': {
+                        ''columns'': [''ref_ce''],
+                        ''table_name'': ''t1'',
+                        ''columns_from'': [''id'']
+                    }
+                }
+			}
+        }
+	}},
+     	{''select'': {
+		''columns'': [''*''],
+		''tables'': [''t1''],
+        ''conditions'': {
+         ''RIGHT JOIN'': {
+                    ''from_table'': ''t2'',
+                    ''from_column'': ''ref_ce'',
+                    ''to_table'': ''t1'',
+                    ''to_column'': ''id''
+                },
+                 ''WHERE'': {
+                ''in'': [
+                    {''t1.id'': {
+                        ''value'': {   
+                                ''select'': {
+                                    ''columns'': [''id''],
+                                    ''tables'': [''t2''],
+                                     ''conditions'': {
+                ''WHERE'': {
+                    ''and'':[
+                         {''num'': {
+                        ''operator'':''BETWEEN'',
+                        ''condition'': [2, 4]
+                    }},
+                        {''val'': {
+                             ''has_not'': ''NOT'',
+                            ''operator'':''like'',
+                            ''condition'': ''%a%''
+                        }}
+                        
+                    ]
+               
+                }
+		}
+                                }
+                            }
+                    }}
+                ]
+                }
+                
+		}
+	}}
+]}';
+BEGIN
+  out_File := UTL_FILE.FOPEN(lc_dir_name, lc_file_name , 'W');
+
+  UTL_FILE.PUT_LINE(out_file , lc_text_input);
+  UTL_FILE.FCLOSE(out_file);
+END;
+
+
 create or replace function parse_json_drop_object(js_obj JSON_OBJECT_T)
 RETURN NCLOB
 IS
@@ -411,7 +522,7 @@ BEGIN
                             lv_field := CONCAT(lv_field, ' ' || REPLACE(lv_jo_field_temp.get(lv_jk_field_temp(n)).to_string, '"', ''));
                             is_condition_between := true;
                         ELSIF is_like THEN
-                            lv_field := CONCAT(lv_field, ' ' || lv_jo_field_temp.get(lv_jk_field_temp(n)).to_string);
+                            lv_field := CONCAT(lv_field, ' ' || REPLACE(lv_jo_field_temp.get(lv_jk_field_temp(n)).to_string, '"', ''''));
                             is_like := false;
                         ELSIF is_condition_between THEN
                             lv_ja_param := lv_jo_field_temp.get_array(lv_jk_field_temp(n));
@@ -790,4 +901,3 @@ begin
     UTL_FILE.FCLOSE(fhandle);
     lv_res := parse_json(lv_json_str);
 end;
-
